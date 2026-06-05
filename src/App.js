@@ -37,9 +37,9 @@ function App() {
     success_rate: 0,
   });
 
-  const [recent, setRecent] = useState([]);
   const [chartData, setChartData] = useState(null);
 
+  // AUTH CHECK
   useEffect(() => {
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -48,18 +48,20 @@ function App() {
     getUser();
   }, []);
 
+  // LOAD STATS (LIVE)
   const loadStats = async () => {
     try {
       const statsRes = await axios.get(
         "https://educational-assessment-creator.onrender.com/stats"
       );
 
-      const recentRes = await axios.get(
-        "https://educational-assessment-creator.onrender.com/assessments"
-      );
+      const data = statsRes.data || {};
 
-      setStats(statsRes.data);
-      setRecent(recentRes.data.slice(0, 5));
+      setStats({
+        total_assessments: data.total_assessments || 0,
+        total_questions: data.total_questions || 0,
+        success_rate: data.success_rate || 0,
+      });
 
       setChartData({
         labels: ["Assessments", "Questions", "Success Rate"],
@@ -67,9 +69,9 @@ function App() {
           {
             label: "AI Analytics",
             data: [
-              statsRes.data.total_assessments || 0,
-              statsRes.data.total_questions || 0,
-              statsRes.data.success_rate || 0,
+              data.total_assessments || 0,
+              data.total_questions || 0,
+              data.success_rate || 0,
             ],
             backgroundColor: ["#4f46e5", "#06b6d4", "#22c55e"],
           },
@@ -80,20 +82,30 @@ function App() {
     }
   };
 
+  // AUTO REFRESH (LIVE DASHBOARD)
   useEffect(() => {
-    if (user) loadStats();
+    if (user) {
+      loadStats();
+
+      const interval = setInterval(() => {
+        loadStats();
+      }, 5000);
+
+      return () => clearInterval(interval);
+    }
   }, [user]);
 
+  // CREATE ASSESSMENT
   const createAssessment = async () => {
     if (!subject || !gradeLevel || !topic) {
-      alert("Fill all fields");
+      alert("Please fill all fields");
       return;
     }
 
     setLoading(true);
 
     try {
-      const res = await axios.post(
+      const response = await axios.post(
         "https://educational-assessment-creator.onrender.com/create-assessment",
         {
           subject,
@@ -102,21 +114,29 @@ function App() {
         }
       );
 
-      setResult(res.data);
+      setResult(response.data);
       loadStats();
-    } catch (err) {
-      alert(err.message);
+
+      setSubject("");
+      setGradeLevel("");
+      setTopic("");
+    } catch (error) {
+      alert(error.message);
     }
 
     setLoading(false);
   };
 
+  // PDF DOWNLOAD
   const downloadPDF = async () => {
     const element = document.getElementById("pdf-area");
+    if (!element) return;
+
     const canvas = await html2canvas(element);
     const imgData = canvas.toDataURL("image/png");
 
     const pdf = new jsPDF("p", "mm", "a4");
+
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
@@ -133,41 +153,67 @@ function App() {
 
   return (
     <div className="App">
+
       <div className="header">
         <h1>🚀 AI Assessment Creator</h1>
         <p>Welcome {user.email}</p>
         <button onClick={logout}>Logout</button>
       </div>
 
+      {/* STATS (LIVE) */}
       <div className="stats">
-        <div className="card"><h2>{stats.total_assessments}</h2></div>
-        <div className="card"><h2>{stats.total_questions}</h2></div>
-        <div className="card"><h2>{stats.success_rate}%</h2></div>
+        <div className="card">
+          <h2>{stats.total_assessments}+</h2>
+          <p>Assessments Created</p>
+        </div>
+
+        <div className="card">
+          <h2>{stats.total_questions}+</h2>
+          <p>Questions Generated</p>
+        </div>
+
+        <div className="card">
+          <h2>{stats.success_rate}%</h2>
+          <p>Success Rate</p>
+        </div>
       </div>
 
-      {chartData && <Bar data={chartData} />}
+      {/* CHART */}
+      {chartData && (
+        <div style={{ width: "600px", margin: "40px auto" }}>
+          <Bar data={chartData} />
+        </div>
+      )}
 
+      {/* FORM */}
       <div className="form">
-        <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" />
-        <input value={gradeLevel} onChange={e => setGradeLevel(e.target.value)} placeholder="Grade" />
-        <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="Topic" />
+        <h2>Create Assessment</h2>
 
-        <button onClick={createAssessment}>
-          {loading ? "Generating..." : "Create"}
+        <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
+        <input value={gradeLevel} onChange={(e) => setGradeLevel(e.target.value)} placeholder="Grade Level" />
+        <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Topic" />
+
+        <button onClick={createAssessment} disabled={loading}>
+          {loading ? "Generating..." : "Create Assessment"}
         </button>
       </div>
 
+      {/* RESULT */}
       {result && (
-        <div id="pdf-area">
-          <button onClick={downloadPDF}>Download PDF</button>
+        <div className="result" id="pdf-area">
+          <h2>✅ Generated</h2>
 
-          {result.questions.map((q, i) => (
+          <button onClick={downloadPDF}>📄 Download PDF</button>
+
+          {result.questions?.map((q, i) => (
             <div key={i}>
-              <h4>{q.question}</h4>
+              <h4>Q{q.id}</h4>
+              <p>{q.question}</p>
             </div>
           ))}
         </div>
       )}
+
     </div>
   );
 }
