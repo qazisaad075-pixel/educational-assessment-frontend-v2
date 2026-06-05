@@ -17,14 +17,9 @@ import {
 
 import { Bar } from "react-chartjs-2";
 
-import { supabase } from "./supabaseClient";
-import Auth from "./Auth";
-
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 function App() {
-  const [user, setUser] = useState(null);
-
   const [subject, setSubject] = useState("");
   const [gradeLevel, setGradeLevel] = useState("");
   const [topic, setTopic] = useState("");
@@ -37,31 +32,21 @@ function App() {
     success_rate: 0,
   });
 
+  const [recent, setRecent] = useState([]);
   const [chartData, setChartData] = useState(null);
 
-  // AUTH CHECK
-  useEffect(() => {
-    const getUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUser(data?.user || null);
-    };
-    getUser();
-  }, []);
-
-  // LOAD STATS (LIVE)
   const loadStats = async () => {
     try {
       const statsRes = await axios.get(
         "https://educational-assessment-creator.onrender.com/stats"
       );
 
-      const data = statsRes.data || {};
+      const recentRes = await axios.get(
+        "https://educational-assessment-creator.onrender.com/assessments"
+      );
 
-      setStats({
-        total_assessments: data.total_assessments || 0,
-        total_questions: data.total_questions || 0,
-        success_rate: data.success_rate || 0,
-      });
+      setStats(statsRes.data);
+      setRecent(recentRes.data.slice(0, 5));
 
       setChartData({
         labels: ["Assessments", "Questions", "Success Rate"],
@@ -69,33 +54,23 @@ function App() {
           {
             label: "AI Analytics",
             data: [
-              data.total_assessments || 0,
-              data.total_questions || 0,
-              data.success_rate || 0,
+              statsRes.data.total_assessments || 0,
+              statsRes.data.total_questions || 0,
+              statsRes.data.success_rate || 0,
             ],
             backgroundColor: ["#4f46e5", "#06b6d4", "#22c55e"],
           },
         ],
       });
     } catch (err) {
-      console.log(err.message);
+      console.log("Stats Error:", err.message);
     }
   };
 
-  // AUTO REFRESH (LIVE DASHBOARD)
   useEffect(() => {
-    if (user) {
-      loadStats();
+    loadStats();
+  }, []);
 
-      const interval = setInterval(() => {
-        loadStats();
-      }, 5000);
-
-      return () => clearInterval(interval);
-    }
-  }, [user]);
-
-  // CREATE ASSESSMENT
   const createAssessment = async () => {
     if (!subject || !gradeLevel || !topic) {
       alert("Please fill all fields");
@@ -121,13 +96,12 @@ function App() {
       setGradeLevel("");
       setTopic("");
     } catch (error) {
-      alert(error.message);
+      alert("Error: " + error.message);
     }
 
     setLoading(false);
   };
 
-  // PDF DOWNLOAD
   const downloadPDF = async () => {
     const element = document.getElementById("pdf-area");
     if (!element) return;
@@ -144,32 +118,24 @@ function App() {
     pdf.save("assessment.pdf");
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
-
-  if (!user) return <Auth setUser={setUser} />;
-
   return (
     <div className="App">
 
       <div className="header">
         <h1>🚀 AI Assessment Creator</h1>
-        <p>Welcome {user.email}</p>
-        <button onClick={logout}>Logout</button>
+        <p>Dashboard Working (Public Mode)</p>
       </div>
 
-      {/* STATS (LIVE) */}
+      {/* STATS */}
       <div className="stats">
         <div className="card">
-          <h2>{stats.total_assessments}+</h2>
-          <p>Assessments Created</p>
+          <h2>{stats.total_assessments}</h2>
+          <p>Assessments</p>
         </div>
 
         <div className="card">
-          <h2>{stats.total_questions}+</h2>
-          <p>Questions Generated</p>
+          <h2>{stats.total_questions}</h2>
+          <p>Questions</p>
         </div>
 
         <div className="card">
@@ -189,9 +155,23 @@ function App() {
       <div className="form">
         <h2>Create Assessment</h2>
 
-        <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
-        <input value={gradeLevel} onChange={(e) => setGradeLevel(e.target.value)} placeholder="Grade Level" />
-        <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Topic" />
+        <input
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          placeholder="Subject"
+        />
+
+        <input
+          value={gradeLevel}
+          onChange={(e) => setGradeLevel(e.target.value)}
+          placeholder="Grade Level"
+        />
+
+        <input
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="Topic"
+        />
 
         <button onClick={createAssessment} disabled={loading}>
           {loading ? "Generating..." : "Create Assessment"}
@@ -201,18 +181,40 @@ function App() {
       {/* RESULT */}
       {result && (
         <div className="result" id="pdf-area">
-          <h2>✅ Generated</h2>
+          <h2>✅ Assessment Generated</h2>
 
           <button onClick={downloadPDF}>📄 Download PDF</button>
 
-          {result.questions?.map((q, i) => (
-            <div key={i}>
+          {result.questions.map((q, i) => (
+            <div className="question" key={i}>
               <h4>Q{q.id}</h4>
               <p>{q.question}</p>
+
+              <div className="tags">
+                <span>{q.type}</span>
+                <span>{q.difficulty || "medium"}</span>
+              </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* RECENT */}
+      <div className="result">
+        <h2>📌 Recent Assessments</h2>
+
+        {recent.length === 0 ? (
+          <p>No assessments yet</p>
+        ) : (
+          recent.map((item, i) => (
+            <div className="question" key={i}>
+              <h4>{item.subject}</h4>
+              <p>Grade: {item.grade_level}</p>
+              <p>Topic: {item.topic}</p>
+            </div>
+          ))
+        )}
+      </div>
 
     </div>
   );
